@@ -61,7 +61,7 @@
     .eyebrow { margin: 0 0 8px; color: var(--cyan); font-size: 11px; font-weight: 900; letter-spacing: .28em; text-transform: uppercase; }
     h1 { margin: 0; font-size: clamp(32px, 7vw, 66px); line-height: .98; font-weight: 1000; letter-spacing: -.055em; text-transform: uppercase; text-shadow: 0 0 26px rgba(73, 247, 231, .25); }
     .intro { margin: 13px auto 23px; max-width: 440px; color: #b6bfdc; font-size: 14px; line-height: 1.55; }
-    .levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
     button {
       color: #fff; font: inherit; cursor: pointer; border: 1px solid rgba(255, 255, 255, .16);
       background: rgba(255, 255, 255, .07); transition: transform .16s, border-color .16s, background .16s;
@@ -86,7 +86,7 @@
       body { padding: 10px; }
       .topline { margin-bottom: 8px; }
       .hint { font-size: 10px; }
-      .levels { gap: 6px; }
+      .levels { grid-template-columns: repeat(2, 1fr); gap: 6px; }
       .level-button { min-height: 72px; padding: 8px 4px; }
       .level-button strong { font-size: 11px; }
       .level-button span { font-size: 9px; }
@@ -100,22 +100,23 @@
   <main class="game-shell">
     <div class="topline">
       <div class="brand">VORTEX<span>DASH</span></div>
-      <div class="hint">HOLD / SPACE TO AUTO-JUMP  HOLD TO FLY IN SHIP & WAVE</div>
+      <div class="hint">TAP FOR A SHORT JUMP · HOLD FOR A HIGHER JUMP / FLY</div>
     </div>
     <section class="stage" aria-label="VortexDash game">
       <canvas id="game" width="960" height="540"></canvas>
       <button class="pause-button hidden" id="pauseButton" aria-label="Pause game"></button>
       <div class="overlay" id="overlay">
         <div class="menu-content" id="menuContent">
-          <p class="eyebrow">Three modes. One minute each. Much easier!</p>
+          <p class="eyebrow">Four neon courses. Portals may or may not cooperate.</p>
           <h1>VortexDash</h1>
-          <p class="intro">Three 1-minute courses with mode-changing portals, fewer hazards, and helpful boost orbs. Every level mixes Cube and Ship; the finale adds Wave.</p>
+          <p class="intro">Race through shifting modes, jump pads, and unreliable portals. The fourth course is a brutal neon gauntlet.</p>
           <div class="levels">
-            <button class="level-button" data-level="0"><strong>01  Pulse Run</strong><span>Cube  Ship  Easy</span></button>
-            <button class="level-button" data-level="1"><strong>02  Sky Circuit</strong><span>Cube  Ship  Medium</span></button>
-            <button class="level-button" data-level="2"><strong>03  Vortex Wave</strong><span>Cube  Ship  Wave  Hard</span></button>
+            <button class="level-button" data-level="0"><strong>01  Pulse Run</strong><span>Cube · Ship · Easy</span></button>
+            <button class="level-button" data-level="1"><strong>02  Sky Circuit</strong><span>Cube · Ship · Medium</span></button>
+            <button class="level-button" data-level="2"><strong>03  Vortex Wave</strong><span>Cube · Ship · Wave · Hard</span></button>
+            <button class="level-button" data-level="3"><strong>04  Neon Overload</strong><span>Neon · Tight gaps · Brutal</span></button>
           </div>
-          <p class="bottom-note">Cube: hold to auto-jump  pads launch you onto high routes  orbs boost near hazards  Ship/Wave: hold to steer.</p>
+          <p class="bottom-note">Cube: tap for a short jump, hold for a higher jump · pads and orbs boost · Ship/Wave: hold to steer.</p>
         </div>
       </div>
     </section>
@@ -132,11 +133,12 @@
   const levels = [
     { name: 'Pulse Run', mode: 'cube', sky: ['#101b42', '#182c50'], glow: '#48f2df', accent: '#a8ff78', speed: 330, gap: 420, seed: 1381 }, 
     { name: 'Sky Circuit', mode: 'ship', sky: ['#17163f', '#173b62'], glow: '#ff58d7', accent: '#70f8ff', speed: 360, gap: 390, seed: 2971 }, 
-    { name: 'Vortex Wave', mode: 'wave', sky: ['#351831', '#522540'], glow: '#ff8658', accent: '#ffe66d', speed: 390, gap: 365, seed: 6013 }
+    { name: 'Vortex Wave', mode: 'wave', sky: ['#351831', '#522540'], glow: '#ff8658', accent: '#ffe66d', speed: 390, gap: 365, seed: 6013 },
+    { name: 'Neon Overload', mode: 'wave', sky: ['#4c073c', '#d20b58'], glow: '#00f5ff', accent: '#fff000', speed: 455, gap: 280, seed: 9473, hard: true }
   ];
   const player = { x: 170, y: GROUND - 38, size: 38, vy: 0, rotation: 0, grounded: true };
   let state = 'menu', level = levels[0], levelIndex = 0, elapsed = 0, world = 0, lastTime = 0, controlsHeld = false;
-  let obstacles = [], orbs = [], particles = [], stars = [], waveTrail = [], best = [0, 0, 0];
+  let obstacles = [], orbs = [], particles = [], stars = [], waveTrail = [], best = [0, 0, 0, 0];
   let waveTrailTimer = 0;
 
   function seeded(seed) {
@@ -163,14 +165,19 @@
     
     // Add mode transition portals within levels
     const portalPositions = [level.speed * 15, level.speed * 30, level.speed * 45];
+    const portalWorks = portalPositions.map(() => random() < (level.hard ? .42 : .62));
+    if (portalWorks.every(Boolean)) portalWorks[1] = false;
+    else if (portalWorks.every(works => !works)) portalWorks[0] = true;
     portalPositions.forEach((portalX, i) => {
-      obstacles.push({ 
-        x: portalX, 
-        type: 'portal', 
+      obstacles.push({
+        x: portalX,
+        type: 'portal',
         mode: i === 0 ? 'ship' : i === 1 ? 'wave' : 'cube',
-        y: 150,
+        y: 55,
         w: 60,
-        h: 240
+        h: 350,
+        works: portalWorks[i],
+        used: false
       });
     });
     
@@ -180,14 +187,11 @@
       if (mode === 'cube') {
         const roll = random();
         // Reduced obstacle density - more open spaces
-        if (roll < .35) {
-          // Single spike
+        if (roll < (level.hard ? .52 : .35)) {
           obstacles.push({ x, type: 'spike', w: 38, h: 38 });
-        } else if (roll < .55) {
-          // Small block
+        } else if (roll < (level.hard ? .78 : .55)) {
           obstacles.push({ x, type: 'block', w: 46, h: 52 });
-        } else if (roll < .75) {
-          // Ceiling spike
+        } else if (roll < .9) {
           obstacles.push({ x, type: 'spike', y: 270, w: 38, h: 42, ceiling: true });
         }
         
@@ -198,8 +202,8 @@
       } else {
         const isWave = mode === 'wave';
         // Larger gaps for easier navigation
-        const gapHeight = isWave ? 200 : 260;
-        const center = isWave ? 135 + random() * 170 : 150 + random() * 105;
+        const gapHeight = level.hard ? (isWave ? 118 : 155) : (isWave ? 200 : 260);
+        const center = isWave ? (level.hard ? 112 + random() * 220 : 135 + random() * 170) : 150 + random() * 105;
         const gapTop = center - gapHeight / 2, gapBottom = center + gapHeight / 2;
         const width = isWave ? 34 : 48;
         
@@ -214,7 +218,7 @@
       
       pattern++;
       // Increased gap between obstacles
-      x += level.gap + random() * (mode === 'cube' ? 200 : 150);
+      x += level.gap + random() * (level.hard ? 70 : mode === 'cube' ? 200 : 150);
     }
   }
   
@@ -245,13 +249,14 @@
     state = 'menu';
     overlay.classList.remove('hidden'); pauseButton.classList.add('hidden');
     document.getElementById('menuContent').innerHTML = `
-      <p class="eyebrow">Three modes. One minute each. Much easier!</p><h1>VortexDash</h1>
-      <p class="intro">Three 1-minute courses with mode-changing portals, fewer hazards, and helpful boost orbs. Every level mixes Cube and Ship; the finale adds Wave.</p>
+      <p class="eyebrow">Four neon courses. Portals may or may not cooperate.</p><h1>VortexDash</h1>
+      <p class="intro">Race through shifting modes, jump pads, and unreliable portals. The fourth course is a brutal neon gauntlet.</p>
       <div class="levels">
-        <button class="level-button" data-level="0"><strong>01  Pulse Run</strong><span>Cube  Ship  Easy</span></button>
-        <button class="level-button" data-level="1"><strong>02  Sky Circuit</strong><span>Cube  Ship  Medium</span></button>
-        <button class="level-button" data-level="2"><strong>03  Vortex Wave</strong><span>Cube  Ship  Wave  Hard</span></button>
-      </div><p class="bottom-note">Cube: hold to auto-jump  pads launch you onto high routes  orbs boost near hazards  Ship/Wave: hold to steer.</p>`;
+        <button class="level-button" data-level="0"><strong>01  Pulse Run</strong><span>Cube · Ship · Easy</span></button>
+        <button class="level-button" data-level="1"><strong>02  Sky Circuit</strong><span>Cube · Ship · Medium</span></button>
+        <button class="level-button" data-level="2"><strong>03  Vortex Wave</strong><span>Cube · Ship · Wave · Hard</span></button>
+        <button class="level-button" data-level="3"><strong>04  Neon Overload</strong><span>Neon · Tight gaps · Brutal</span></button>
+      </div><p class="bottom-note">Cube: tap for a short jump, hold for a higher jump · pads and orbs boost · Ship/Wave: hold to steer.</p>`;
     document.querySelectorAll('[data-level]').forEach(button => button.addEventListener('click', () => startGame(Number(button.dataset.level))));
   }
   
@@ -273,7 +278,7 @@
     const orb = orbs.find(item => item.active && Math.hypot(item.x - world - cx, item.y - cy) < 70);
     if (orb) collectOrb(orb);
     else if (modeAtTime() === 'cube' && player.grounded) {
-      player.vy = -590; player.grounded = false;
+      player.vy = -500; player.grounded = false;
     }
   }
   
@@ -317,8 +322,8 @@
   
   function finish() {
     state = 'won'; best[levelIndex] = DURATION;
-    const next = levelIndex < 2 ? levelIndex + 1 : 0;
-    showCard('Level clear!', `You beat ${level.name} in 1:00. ${levelIndex < 2 ? 'Ready for the next challenge?' : 'All three levels conquered!'}`, levelIndex < 2 ? 'Next level' : 'Play again', () => startGame(next), true);
+    const next = levelIndex < 3 ? levelIndex + 1 : 0;
+    showCard('Level clear!', `You beat ${level.name} in 1:00. ${levelIndex < 3 ? 'Ready for the next challenge?' : 'All four levels conquered!'}`, levelIndex < 3 ? 'Next level' : 'Play again', () => startGame(next), true);
   }
   
   function formatTime(seconds) {
@@ -341,7 +346,7 @@
           ob.type === 'pad' && !ob.used && ob.x - world < player.x + player.size && ob.x - world + ob.w > player.x
         );
         if (controlsHeld && player.grounded && !padUnderPlayer) {
-          player.vy = -590;
+          player.vy = -640;
           player.grounded = false;
         }
         player.y += player.vy * dt;
@@ -397,11 +402,18 @@
         if (ob.type === 'portal') {
           const overlapsX = px + ps > ox + 4 && px < ox + ob.w - 4;
           const overlapsY = py + ps > oy + 4 && py < oy + ob.h - 4;
-          
-          if (overlapsX && overlapsY) {
-            // Change mode when entering portal
-            // This is a visual effect - actual mode changes based on time
-            burst(ox + ob.w/2, oy + ob.h/2, level.glow, 15);
+          if (!ob.used && overlapsX && overlapsY) {
+            ob.used = true;
+            if (ob.works) {
+              const portalMode = modeAtTime();
+              player.vy = portalMode === 'cube' ? -520 : portalMode === 'ship' ? -250 : -180;
+              player.grounded = false;
+              player.invulnerable = .9;
+              world += 115;
+              burst(ox + ob.w / 2, oy + ob.h / 2, level.glow, 24);
+            } else {
+              burst(ox + ob.w / 2, oy + ob.h / 2, '#ff456f', 16);
+            }
           }
           continue;
         }
@@ -478,7 +490,8 @@
     ctx.strokeStyle = 'rgba(255, 255, 255, .035)'; ctx.lineWidth = 1;
     for (let x = -(world * .5 % 48); x < W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, GROUND); ctx.stroke(); }
     
-    ctx.fillStyle = '#0a0d20'; ctx.fillRect(0, GROUND, W, H - GROUND);
+    ctx.fillStyle = level.hard ? '#761044' : '#0a0d20'; ctx.fillRect(0, GROUND, W, H - GROUND);
+    if (level.hard) { ctx.fillStyle = '#ed237b'; ctx.fillRect(0, GROUND + 6, W, 2); }
     ctx.fillStyle = level.glow; ctx.shadowColor = level.glow; ctx.shadowBlur = 16; ctx.fillRect(0, GROUND, W, 3); ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(255, 255, 255, .055)';
     for (let x = -(world % 42); x < W; x += 42) { ctx.fillRect(x, GROUND + 17, 22, 2); ctx.fillRect(x + 12, GROUND + 34, 22, 2); }
@@ -490,18 +503,14 @@
     ctx.save(); ctx.shadowColor = level.glow; ctx.shadowBlur = 12;
     
     if (ob.type === 'portal') {
-      // Draw portal
+      const portalColor = ob.used ? '#68708a' : ob.works ? level.glow : '#ff456f';
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
       ctx.fillRect(x, ob.y, ob.w, ob.h);
-      
-      // Portal effect
-      ctx.strokeStyle = level.glow;
+      ctx.strokeStyle = portalColor;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.ellipse(x + ob.w/2, ob.y + ob.h/2, ob.w/2 - 5, ob.h/2 - 5, 0, 0, Math.PI * 2);
       ctx.stroke();
-      
-      // Mode indicator
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
@@ -627,7 +636,7 @@
   function drawHUD() {
     if (state === 'menu') return;
     ctx.fillStyle = 'rgba(4, 7, 20, .58)'; ctx.fillRect(20, 17, 300, 67);
-    ctx.font = '800 13px system-ui'; ctx.fillStyle = level.glow; ctx.fillText(`${String(levelIndex + 1).padStart(2, '0')} / 03   ${level.name.toUpperCase()}`, 34, 40);
+    ctx.font = '800 13px system-ui'; ctx.fillStyle = level.glow; ctx.fillText(`${String(levelIndex + 1).padStart(2, '0')} / 04   ${level.name.toUpperCase()}`, 34, 40);
     ctx.font = '700 12px system-ui'; ctx.fillStyle = '#fff'; ctx.fillText(`${formatTime(elapsed)}  /  1:00`, 34, 64);
     ctx.font = '800 10px system-ui'; ctx.fillStyle = level.accent; ctx.fillText(`${modeAtTime().toUpperCase()} MODE`, 145, 64);
     const barX = W - 252, barY = 35, barW = 218;
